@@ -1,22 +1,24 @@
-name: 自动更新 Adobe 列表并生成AdguarHome阻止列表
+name: 自动更新 Adobe 列表并生成AdguardHome黑名单V3
 on:
   schedule:
     - cron: '0 2 * * *'
   workflow_dispatch:
 
-permissions:
-  contents: write
-  pull-requests: write
-
 jobs:
   update-list:
     runs-on: ubuntu-latest
     steps:
-      - name: 检出仓库代码
+      - name: 检出仓库代码（带 PAT 权限+完整历史）
         uses: actions/checkout@v4
-        # 引用仓库密钥 PAT_TOKEN 拉取代码
         with:
           token: ${{ secrets.PAT_TOKEN }}
+          fetch-depth: 0  # 拉取完整的仓库历史，避免冲突
+
+      - name: 拉取远程最新代码（解决冲突核心步骤）
+        run: |
+          git pull origin main --rebase  # 变基拉取，避免合并提交
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
 
       - name: 下载并处理列表
         run: |
@@ -33,7 +35,7 @@ jobs:
           fi
           
           echo "下载成功，正在处理格式..."
-          > $TARGET_FILE
+          > $TARGET_FILE  # 清空目标文件，避免重复内容
           
           while IFS= read -r line; do
             if [[ -n "$line" && ! "$line" =~ ^# ]]; then
@@ -44,20 +46,21 @@ jobs:
           echo "处理完成，共写入 $(wc -l < $TARGET_FILE) 行数据。"
           rm -f $TEMP_FILE
 
-      - name: 提交更新
+      - name: 提交并推送更新（带冲突处理）
         run: |
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
           TARGET_FILE="adobe_acti_bykim.list"
-
+          
+          # 检查文件是否有变化
           if git diff --quiet $TARGET_FILE; then
             echo "文件无更新，跳过提交"
             exit 0
           fi
-
-          # 核心修改：用仓库密钥 PAT_TOKEN 推送代码
-          # 这里的 trasne/workflow 是你的仓库地址，无需修改
-          git remote set-url origin https://${{ secrets.PAT_TOKEN }}@github.com/trasne/workflow.git
+          
+          # 强制替换远程地址为带 PAT 的地址
+          git remote remove origin
+          git remote add origin https://${{ secrets.PAT_TOKEN }}@github.com/trasne/workflow.git
+          
+          # 提交+推送（强制推送，确保覆盖冲突）
           git add $TARGET_FILE
           git commit -m "自动更新 Adobe 列表（$(date +'%Y-%m-%d %H:%M:%S')）"
-          git push
+          git push -f origin main  # -f 强制推送，解决冲突（无分支保护时安全）
