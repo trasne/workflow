@@ -1,4 +1,4 @@
-name: 自动更新 Adobe 列表并生成AdguardHome黑名单V2
+name: 自动更新Adobe列表forAdguardHome v5
 on:
   schedule:
     - cron: '0 2 * * *'
@@ -8,59 +8,71 @@ jobs:
   update-list:
     runs-on: ubuntu-latest
     steps:
-      - name: 检出仓库代码（带 PAT 权限+完整历史）
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.PAT_TOKEN }}
-          fetch-depth: 0  # 拉取完整的仓库历史，避免冲突
-
-      - name: 拉取远程最新代码（解决冲突核心步骤）
-        run: |
-          git pull origin main --rebase  # 变基拉取，避免合并提交
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
-
       - name: 下载并处理列表
         run: |
+          # 1. 下载原始列表
           SOURCE_URL="https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/refs/heads/meta/geo/geosite/adobe-activation.list"
           TARGET_FILE="adobe_acti_bykim.list"
-          TEMP_FILE="temp.txt"
-
-          echo "正在从 $SOURCE_URL 下载数据..."
-          curl -sSL $SOURCE_URL -o $TEMP_FILE
           
-          if [ ! -s "$TEMP_FILE" ]; then
-            echo "错误：下载的文件为空！"
-            exit 1
-          fi
+          echo "下载原始列表..."
+          curl -sSL $SOURCE_URL > raw.txt
           
-          echo "下载成功，正在处理格式..."
-          > $TARGET_FILE  # 清空目标文件，避免重复内容
-          
+          # 2. 处理格式（加||前缀、……后缀）
+          echo "处理列表格式..."
+          > $TARGET_FILE  # 清空目标文件
           while IFS= read -r line; do
             if [[ -n "$line" && ! "$line" =~ ^# ]]; then
               echo "||$line……" >> $TARGET_FILE
             fi
-          done < $TEMP_FILE
+          done < raw.txt
           
-          echo "处理完成，共写入 $(wc -l < $TARGET_FILE) 行数据。"
-          rm -f $TEMP_FILE
+          # 3. 输出处理结果（验证）
+          echo "处理完成，总行数：$(wc -l < $TARGET_FILE)"
+          rm -f raw.txt
 
-      - name: 提交并推送更新（带冲突处理）
+      - name: 用 GitHub API 推送文件（核心解决权限问题）
+        env:
+          PAT: ${{ secrets.PAT_TOKEN }}
+          REPO: trasne/workflow  # 你的仓库：用户名/仓库名
+          FILE_PATH: adobe_acti_bykim.list
         run: |
-          TARGET_FILE="adobe_acti_bykim.list"
+          # 读取文件内容并 Base64 编码（GitHub API 要求）
+          CONTENT=$(base64 -w 0 $FILE_PATH)
           
-          # 检查文件是否有变化
-          if git diff --quiet $TARGET_FILE; then
-            echo "文件无更新，跳过提交"
-            exit 0
+          # 获取文件的 SHA（用于更新，避免重复创建）
+          SHA=$(curl -s -H "Authorization: token $PAT" \
+            "https://api.github.com/repos/$REPO/contents/$FILE_PATH" \
+            | jq -r '.sha // "null"')
+          
+          # 构造请求体
+          if [ "$SHA" = "null" ]; then
+            # 文件不存在，创建新文件
+            PAYLOAD=$(jq -n \
+              --arg path "$FILE_PATH" \
+              --arg content "$CONTENT" \
+              --arg message "自动更新 Adobe 列表（$(date +'%Y-%m-%d %H:%M:%S')）" \
+              '{path: $path, content: $content, message: $message}')
+          else
+            # 文件已存在，更新文件
+            PAYLOAD=$(jq -n \
+              --arg path "$FILE_PATH" \
+              --arg content "$CONTENT" \
+              --arg sha "$SHA" \
+              --arg message "自动更新 Adobe 列表（$(date +'%Y-%m-%d %H:%M:%S')）" \
+              '{path: $path, content: $content, sha: $sha, message: $message}')
           fi
           
-          # 强制替换远程地址为带 PAT 的地址
-          git remote remove origin
-          git remote add origin https://${{ secrets.PAT_TOKEN }}@github.com/trasne/workflow.git
+          # 调用 GitHub API 推送
+          RESPONSE=$(curl -s -X PUT \
+            -H "Authorization: token $PAT" \
+            -H "Content-Type: application/json" \
+            "https://api.github.com/repos/$REPO/contents/$FILE_PATH" \
+            -d "$PAYLOAD")
           
-          # 提交+推送（强制推送，确保覆盖冲突）
-          git add $TARGET_FILE
-          git commit -m "自动更新 Adobe 列表（$(date +'%Y-%m-%d %H:%M:%S')）"
-          git push -f origin main  # -f 强制推送，解决冲突（无分支保护时安全）
+          # 验证结果
+          if echo "$RESPONSE" | jq -e '.content' > /dev/null; then
+            echo "✅ 文件推送成功！"
+          else
+            echo "❌ 推送失败，响应：$RESPONSE"
+            exit 1
+          fi
