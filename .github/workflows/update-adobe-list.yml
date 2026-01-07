@@ -1,10 +1,8 @@
 name: Update Adobe Activation List
 
 on:
-  # 每天 UTC 时间凌晨 2 点自动运行（可按需修改）
   schedule:
     - cron: '0 2 * * *'
-  # 也支持手动触发
   workflow_dispatch:
 
 jobs:
@@ -14,13 +12,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Fetch and format list
+      - name: Fetch and format adobe-activation.list
         run: |
-         
-          curl -s "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/refs/heads/meta/geo/geosite/adobe-activation.list" 
-            | sed 's/^[[:space:]]*//; /^[[:space:]]*$/d' \  # 去除空行和前后空格
-            | sed 's/^/||/; s/$/^/' \
-            > adobe-activation.list  # 输出路径，可改为 adobe-activation.list 如果不需要子目录
+          mkdir -p lists
+          url="https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/adobe-activation.list"
+          echo "📥 Downloading from $url"
+          if ! raw_content=$(curl -sf "$url"); then
+            echo "❌ Failed to fetch the list. The URL may be invalid or the file not found."
+            exit 1
+          fi
+          echo "$raw_content" | \
+            grep -v '^\s*$' | \
+            sed 's/^[[:space:]]*//; s/^/||/; s/$/^/' \
+            > lists/adobe-activation.list
+          echo "✅ Successfully generated lists/adobe-activation.list"
 
       - name: Set up Git
         run: |
@@ -34,5 +39,5 @@ jobs:
             git commit -m "chore: auto-update adobe-activation.list from MetaCubeX"
             git push
           else
-            echo "No changes detected."
+            echo "ℹ️ No changes — nothing to commit."
           fi
