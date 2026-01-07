@@ -1,4 +1,4 @@
-name: 自动更新 Adobe 列表并添加前缀后缀
+name: 自动更新 Adobe 列表并生成AdguardHome黑名单V2
 on:
   schedule:
     - cron: '0 2 * * *'
@@ -8,60 +8,59 @@ jobs:
   update-list:
     runs-on: ubuntu-latest
     steps:
-      - name: 检出仓库代码
+      - name: 检出仓库代码（带 PAT 权限+完整历史）
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
+          fetch-depth: 0  # 拉取完整的仓库历史，避免冲突
 
-      - name: 下载 Adobe 原始列表
+      - name: 拉取远程最新代码（解决冲突核心步骤）
         run: |
-          # 目标 URL
-          SOURCE_URL="https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/refs/heads/meta/geo/geosite/adobe-activation.list"
-          # 临时文件
-          TEMP_RAW="temp_raw.txt"
-          # 你的目标文件（重点：改为 adobe_acti_bykim.list）
-          TARGET_FILE="adobe_acti_bykim.list"
-
-          # 打印日志，方便排查
-          echo "开始下载原始列表，URL：$SOURCE_URL"
-          # 下载并保留日志，即使失败也不中断
-          curl -sSL $SOURCE_URL -o $TEMP_RAW || echo "下载失败，请检查 URL 是否可访问"
-          # 打印下载的内容行数，排查是否为空
-          echo "下载的原始内容行数：$(wc -l $TEMP_RAW)"
-          # 过滤注释和空行
-          grep -vE '^#|^$' $TEMP_RAW > $TEMP_RAW.filtered
-          echo "过滤后有效内容行数：$(wc -l $TEMP_RAW.filtered)"
-
-      - name: 处理列表格式
-        run: |
-          TEMP_RAW="temp_raw.txt.filtered"
-          TARGET_FILE="adobe_acti_bykim.list"
-
-          # 清空目标文件（避免重复追加）
-          > $TARGET_FILE
-          # 遍历每行添加前缀后缀
-          while IFS= read -r line; do
-            if [ -n "$line" ]; then  # 跳过空行
-              echo "||$line……" >> $TARGET_FILE
-            fi
-          done < $TEMP_RAW
-
-          # 打印处理后的内容行数，排查是否写入成功
-          echo "处理后写入目标文件的行数：$(wc -l $TARGET_FILE)"
-          # 删除临时文件
-          rm -f temp_raw.txt temp_raw.txt.filtered
-
-      - name: 提交更新
-        run: |
+          git pull origin main --rebase  # 变基拉取，避免合并提交
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
-          TARGET_FILE="adobe_acti_bykim.list"
 
+      - name: 下载并处理列表
+        run: |
+          SOURCE_URL="https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/refs/heads/meta/geo/geosite/adobe-activation.list"
+          TARGET_FILE="adobe_acti_bykim.list"
+          TEMP_FILE="temp.txt"
+
+          echo "正在从 $SOURCE_URL 下载数据..."
+          curl -sSL $SOURCE_URL -o $TEMP_FILE
+          
+          if [ ! -s "$TEMP_FILE" ]; then
+            echo "错误：下载的文件为空！"
+            exit 1
+          fi
+          
+          echo "下载成功，正在处理格式..."
+          > $TARGET_FILE  # 清空目标文件，避免重复内容
+          
+          while IFS= read -r line; do
+            if [[ -n "$line" && ! "$line" =~ ^# ]]; then
+              echo "||$line……" >> $TARGET_FILE
+            fi
+          done < $TEMP_FILE
+          
+          echo "处理完成，共写入 $(wc -l < $TARGET_FILE) 行数据。"
+          rm -f $TEMP_FILE
+
+      - name: 提交并推送更新（带冲突处理）
+        run: |
+          TARGET_FILE="adobe_acti_bykim.list"
+          
+          # 检查文件是否有变化
           if git diff --quiet $TARGET_FILE; then
             echo "文件无更新，跳过提交"
             exit 0
           fi
-
+          
+          # 强制替换远程地址为带 PAT 的地址
+          git remote remove origin
+          git remote add origin https://${{ secrets.PAT_TOKEN }}@github.com/trasne/workflow.git
+          
+          # 提交+推送（强制推送，确保覆盖冲突）
           git add $TARGET_FILE
           git commit -m "自动更新 Adobe 列表（$(date +'%Y-%m-%d %H:%M:%S')）"
-          git push
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          git push -f origin main  # -f 强制推送，解决冲突（无分支保护时安全）
