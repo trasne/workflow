@@ -22,7 +22,7 @@ jobs:
           > $TARGET_FILE  # 清空目标文件
           while IFS= read -r line; do
             if [[ -n "$line" && ! "$line" =~ ^# ]]; then
-              echo "||$line……" >> $TARGET_FILE
+              echo "||$line^" >> $TARGET_FILE
             fi
           done < raw.txt
           
