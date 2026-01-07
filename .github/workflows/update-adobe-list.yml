@@ -16,7 +16,7 @@ jobs:
 
       - name: Fetch and format list
         run: |
-          mkdir -p lists  # 如果你希望文件放在特定目录，比如 lists/
+         
           curl -s "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/refs/heads/meta/geo/geosite/adobe-activation.list" \
             | sed 's/^[[:space:]]*//; /^[[:space:]]*$/d' \  # 去除空行和前后空格
             | sed 's/^/||/; s/$/^/' \
