@@ -1,4 +1,4 @@
-name: Update Adobe Activation List v3
+name: Update Adobe Activation List v5
 
 on:
   schedule:
@@ -8,20 +8,23 @@ on:
 jobs:
   update-list:
     runs-on: ubuntu-latest
+    # 👇 关键：授予写权限，解决 403 错误
+    permissions:
+      contents: write
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Fetch and format adobe-activation.list
         run: |
-          mkdir -p lists
           url="https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/adobe-activation.list"
           echo "📥 Downloading from $url"
           curl -sf "$url" \
             | grep -v '^[[:space:]]*$' \
             | sed 's/^[[:space:]]*//; s/^/||/; s/$/^/' \
-            > lists/adobe-activation.list
-          echo "✅ Successfully generated lists/adobe-activation.list"
+            > adobe-activation.list
+          echo "✅ Successfully generated adobe-activation.list in root directory"
 
       - name: Set up Git
         run: |
@@ -30,7 +33,7 @@ jobs:
 
       - name: Commit and push if changed
         run: |
-          git add lists/adobe-activation.list
+          git add adobe-activation.list
           if ! git diff --staged --quiet; then
             git commit -m "chore: auto-update adobe-activation.list from MetaCubeX"
             git push
