@@ -1,63 +1,67 @@
 name: 自动更新 Adobe 列表并添加前缀后缀
 on:
-  # 1. 定时触发（每天凌晨2点运行，可修改 cron 表达式）
   schedule:
     - cron: '0 2 * * *'
-  # 2. 手动触发（可在 GitHub 仓库页面手动运行）
   workflow_dispatch:
 
 jobs:
   update-list:
     runs-on: ubuntu-latest
     steps:
-      # 步骤1：拉取你的 GitHub 仓库代码
       - name: 检出仓库代码
         uses: actions/checkout@v4
 
-      # 步骤2：下载目标 URL 的原始列表
       - name: 下载 Adobe 原始列表
         run: |
-          # 目标 URL（你提供的地址）
+          # 目标 URL
           SOURCE_URL="https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/refs/heads/meta/geo/geosite/adobe-activation.list"
-          # 临时文件存储原始内容
+          # 临时文件
           TEMP_RAW="temp_raw.txt"
-          # 目标文件（你要更新的 list 文件）
+          # 你的目标文件（重点：改为 adobe_acti_bykim.list）
           TARGET_FILE="adobe_acti_bykim.list"
 
-          # 下载原始列表（忽略注释/空行，仅保留有效域名行）
-          curl -sSL $SOURCE_URL | grep -vE '^#|^$' > $TEMP_RAW
+          # 打印日志，方便排查
+          echo "开始下载原始列表，URL：$SOURCE_URL"
+          # 下载并保留日志，即使失败也不中断
+          curl -sSL $SOURCE_URL -o $TEMP_RAW || echo "下载失败，请检查 URL 是否可访问"
+          # 打印下载的内容行数，排查是否为空
+          echo "下载的原始内容行数：$(wc -l $TEMP_RAW)"
+          # 过滤注释和空行
+          grep -vE '^#|^$' $TEMP_RAW > $TEMP_RAW.filtered
+          echo "过滤后有效内容行数：$(wc -l $TEMP_RAW.filtered)"
 
-      # 步骤3：处理文件（每行添加前缀 || 和后缀 ……）
       - name: 处理列表格式
         run: |
-          TEMP_RAW="temp_raw.txt"
-          TARGET_FILE="adobe.list"
+          TEMP_RAW="temp_raw.txt.filtered"
+          TARGET_FILE="adobe_acti_bykim.list"
 
-          # 遍历原始文件每一行，添加前缀和后缀，覆盖到目标文件
+          # 清空目标文件（避免重复追加）
+          > $TARGET_FILE
+          # 遍历每行添加前缀后缀
           while IFS= read -r line; do
-            echo "||$line……" >> $TARGET_FILE
+            if [ -n "$line" ]; then  # 跳过空行
+              echo "||$line……" >> $TARGET_FILE
+            fi
           done < $TEMP_RAW
 
+          # 打印处理后的内容行数，排查是否写入成功
+          echo "处理后写入目标文件的行数：$(wc -l $TARGET_FILE)"
           # 删除临时文件
-          rm -f $TEMP_RAW
+          rm -f temp_raw.txt temp_raw.txt.filtered
 
-      # 步骤4：提交更新到 GitHub 仓库
       - name: 提交更新
         run: |
-          # 配置 Git 身份（用于提交）
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
+          TARGET_FILE="adobe_acti_bykim.list"
 
-          # 检查文件是否有变化
           if git diff --quiet $TARGET_FILE; then
             echo "文件无更新，跳过提交"
             exit 0
           fi
 
-          # 提交修改
           git add $TARGET_FILE
           git commit -m "自动更新 Adobe 列表（$(date +'%Y-%m-%d %H:%M:%S')）"
           git push
         env:
-          # 授权 GitHub Actions 推送代码（默认已内置，无需额外配置）
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
