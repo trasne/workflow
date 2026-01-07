@@ -1,4 +1,4 @@
-name: 自动更新Adobe列表forAdguardHome v5
+name: 自动更新Adobe列表forAdguardHome v5.1
 on:
   schedule:
     - cron: '0 2 * * *'
