@@ -1,4 +1,4 @@
-name: Update Adobe Activation List
+name: Update Adobe Activation List v2
 
 on:
   schedule:
