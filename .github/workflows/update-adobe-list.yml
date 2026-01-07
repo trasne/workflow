@@ -1,4 +1,4 @@
-name: Update Adobe Activation List v5
+name: Update Adobe Activation List v6
 
 on:
   schedule:
@@ -8,13 +8,15 @@ on:
 jobs:
   update-list:
     runs-on: ubuntu-latest
-    # 👇 关键：授予写权限，解决 403 错误
     permissions:
       contents: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # 获取完整历史，避免 shallow clone 导致 push 失败
+          fetch-depth: 0
 
       - name: Fetch and format adobe-activation.list
         run: |
@@ -24,7 +26,7 @@ jobs:
             | grep -v '^[[:space:]]*$' \
             | sed 's/^[[:space:]]*//; s/^/||/; s/$/^/' \
             > adobe-activation.list
-          echo "✅ Successfully generated adobe-activation.list in root directory"
+          echo "✅ Generated adobe-activation.list in root"
 
       - name: Set up Git
         run: |
@@ -36,7 +38,8 @@ jobs:
           git add adobe-activation.list
           if ! git diff --staged --quiet; then
             git commit -m "chore: auto-update adobe-activation.list from MetaCubeX"
-            git push
+            # 使用 --force-with-lease 安全强制推送
+            git push --force-with-lease
           else
             echo "ℹ️ No changes — nothing to commit."
           fi
