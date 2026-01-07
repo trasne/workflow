@@ -1,4 +1,4 @@
-name: Update Adobe Activation List v2
+name: Update Adobe Activation List v3
 
 on:
   schedule:
@@ -17,13 +17,9 @@ jobs:
           mkdir -p lists
           url="https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/adobe-activation.list"
           echo "📥 Downloading from $url"
-          if ! raw_content=$(curl -sf "$url"); then
-            echo "❌ Failed to fetch the list. The URL may be invalid or the file not found."
-            exit 1
-          fi
-          echo "$raw_content" | \
-            grep -v '^\s*$' | \
-            sed 's/^[[:space:]]*//; s/^/||/; s/$/^/' \
+          curl -sf "$url" \
+            | grep -v '^[[:space:]]*$' \
+            | sed 's/^[[:space:]]*//; s/^/||/; s/$/^/' \
             > lists/adobe-activation.list
           echo "✅ Successfully generated lists/adobe-activation.list"
 
