@@ -4,9 +4,8 @@ on:
     - cron: '0 2 * * *'
   workflow_dispatch:
 
-# 新增：显式声明权限
 permissions:
-  contents: write  # 授予写入仓库内容的权限
+  contents: write
   pull-requests: write
 
 jobs:
@@ -15,6 +14,9 @@ jobs:
     steps:
       - name: 检出仓库代码
         uses: actions/checkout@v4
+        # 引用仓库密钥 PAT_TOKEN 拉取代码
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
 
       - name: 下载并处理列表
         run: |
@@ -53,8 +55,9 @@ jobs:
             exit 0
           fi
 
+          # 核心修改：用仓库密钥 PAT_TOKEN 推送代码
+          # 这里的 trasne/workflow 是你的仓库地址，无需修改
+          git remote set-url origin https://${{ secrets.PAT_TOKEN }}@github.com/trasne/workflow.git
           git add $TARGET_FILE
           git commit -m "自动更新 Adobe 列表（$(date +'%Y-%m-%d %H:%M:%S')）"
           git push
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
